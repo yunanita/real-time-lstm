@@ -1,0 +1,2 @@
+# lstm
+terhubung dengan otomatisasi
