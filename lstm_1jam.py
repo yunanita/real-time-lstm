@@ -1,11 +1,14 @@
-# ==================== LSTM PREDICTION - 1 JAM (FULL DATA VERSION) ====================
+# ==================== LSTM PREDICTION - 1 BULAN (CLEAN VERSION) ====================
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import pytz
+import json  
+import os     
 
 from google.oauth2 import service_account
 from google.cloud import bigquery
+import google.auth  
 
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error, mean_absolute_error, mean_absolute_percentage_error
@@ -15,12 +18,46 @@ from tensorflow.keras.layers import LSTM, Dense, Dropout, Input
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 import tensorflow as tf
 
-import os
 import warnings
 warnings.filterwarnings('ignore')
 
+# ==================== FUNGSI AUTHENTIKASI ====================
+def get_credentials():
+    """
+    Mendapatkan credentials dari:
+    1. Environment variable GCP_CREDS (untuk GitHub Actions)
+    2. File JSON lokal (untuk development lokal)
+    """
+    gcp_creds_json = os.environ.get("GCP_CREDS")  # bisa ganti "GCP_CREDENTIALS" jika perlu
+    
+    if gcp_creds_json:
+        try:
+            creds_dict = json.loads(gcp_creds_json)
+            credentials = service_account.Credentials.from_service_account_info(creds_dict)
+            print("✅ Menggunakan credentials dari environment variable GCP_CREDS")
+            return credentials
+        except json.JSONDecodeError as e:
+            print(f"❌ Error parsing JSON dari environment variable: {e}")
+            raise
+    
+    # Fallback: Coba dari file lokal
+    local_file = "time-series-analysis-480002-e7649b18ed82.json"
+    if os.path.exists(local_file):
+        credentials = service_account.Credentials.from_service_account_file(local_file)
+        print(f"✅ Menggunakan credentials dari file lokal: {local_file}")
+        return credentials
+    
+    # Fallback terakhir
+    try:
+        credentials, _ = google.auth.default()
+        print("⚠️  Menggunakan default application credentials")
+        return credentials
+    except Exception as e:
+        print(f"❌ Error menggunakan default credentials: {e}")
+    
+    raise Exception("❌ Tidak ditemukan credentials! Set environment variable GCP_CREDS atau sediakan file JSON.")
+
 # ==================== KONFIGURASI ====================
-SERVICE_ACCOUNT_PATH = os.environ.get("GCP_CREDS", "time-series-analysis-480002-e7649b18ed82.json")
 PROJECT_ID = "time-series-analysis-480002"
 DATASET_ID = "SOL"
 PREDICTION_DATASET = "PREDIKSI"
@@ -40,13 +77,18 @@ TIMEFRAME_CONFIG = {
         'dropout': 0.2,
         'max_epochs': 30,           # ⬇️ OPTIMIZED
         'patience': 8,              # ⬇️ OPTIMIZED
-        'batch_size': 32            # OPTIMIZED
+        'batch_size': 32           
     }
 }
 
 # ==================== INISIALISASI BIGQUERY ====================
-creds = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_PATH)
-client = bigquery.Client(credentials=creds, project=creds.project_id)
+try:
+    credentials = get_credentials()
+    client = bigquery.Client(credentials=credentials, project=PROJECT_ID)
+    print(f"✅ Berhasil terkoneksi ke BigQuery. Project: {PROJECT_ID}")
+except Exception as e:
+    print(f"❌ Gagal menginisialisasi BigQuery client: {e}")
+    client = None  # Untuk testing tanpa koneksi
 
 # ==================== FUNGSI LSTM ====================
 def create_sequences(data, sequence_length):

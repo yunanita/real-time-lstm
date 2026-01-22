@@ -23,14 +23,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Setup Google Credentials
-        env:
-          GCP_CREDS: ${{ secrets.GCP_CREDS }}
-        run: |
-          echo "$GCP_CREDS" > time-series-analysis-480002-e7649b18ed82.json
-
       - name: Run LSTM 1 Jam
         env:
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/time-series-analysis-480002-e7649b18ed82.json
+          GCP_CREDS: ${{ secrets.GCP_CREDS }}
         run: |
           python lstm_1jam.py
