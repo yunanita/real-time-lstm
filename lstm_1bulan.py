@@ -14,35 +14,12 @@ from tensorflow.keras.models import Sequential, load_model
 from tensorflow.keras.layers import LSTM, Dense, Dropout, Input
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 import tensorflow as tf
-import json
 import os
 import warnings
 warnings.filterwarnings('ignore')
 
 # ==================== KONFIGURASI ====================
-def get_credentials():
-    """
-    Mendapatkan credentials dari:
-    1. Environment variable GCP_CREDENTIALS (untuk GitHub Actions)
-    2. File JSON lokal (untuk development lokal)
-    """
-    gcp_creds_json = os.environ.get("GCP_CREDS")
-    
-    if gcp_creds_json:
-        creds_dict = json.loads(gcp_creds_json)
-        credentials = service_account.Credentials.from_service_account_info(creds_dict)
-        print("✅ Using credentials from environment variable")
-        return credentials
-    
-    local_file = "time-series-analysis-480002-e7649b18ed82.json"
-    if os.path.exists(local_file):
-        credentials = service_account.Credentials.from_service_account_file(local_file)
-        print("✅ Using credentials from local file")
-        return credentials
-    
-    raise Exception("❌ No credentials found! Set GCP_CREDENTIALS env var or provide JSON file.")
-
-SERVICE_ACCOUNT_PATH = get_credentials()
+SERVICE_ACCOUNT_PATH = "time-series-analysis-480002-e7649b18ed82.json"
 PROJECT_ID = "time-series-analysis-480002"
 DATASET_ID = "SOL"
 PREDICTION_DATASET = "PREDIKSI"
