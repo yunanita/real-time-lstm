@@ -1,11 +1,7 @@
-tensorflow
-pandas
+pandas>=2.0.0
 numpy
-matplotlib
-warnings
 pytz
-google-auth
+google-auth>=2.0.0
 google-cloud-bigquery
-statsmodels
 scikit-learn
-
+tensorflow
