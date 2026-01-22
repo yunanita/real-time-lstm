@@ -1,4 +1,4 @@
-# ==================== LSTM PREDICTION - 1 BULAN (CLEAN VERSION) ====================
+# ==================== LSTM PREDICTION - 1 jam ====================
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta

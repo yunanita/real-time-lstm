@@ -1,4 +1,4 @@
-# ==================== LSTM PREDICTION - 1 hari ====================
+# ==================== LSTM PREDICTION - 1 Menit ====================
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -62,17 +62,22 @@ PROJECT_ID = "time-series-analysis-480002"
 DATASET_ID = "SOL"
 PREDICTION_DATASET = "PREDIKSI"
 
-# Konfigurasi 1 hari
+# Konfigurasi 1 menit - FULL DATA
 TIMEFRAME_CONFIG = {
-    '1hari': {
-        'table_name': 'SOL_1hari',
-        'lookback_years': 4,
-        'retrain_frequency': '1x/hari',
-        'retrain_times': ['20:00'],
-        'forecast_steps': 1,
-        'timeframe_minutes': 1440,
-        'horizon_real': '1 hari',
-        'sequence_length': 20
+    '1menit': {
+        'table_name': 'SOL_1menit',
+        'lookback_years': 1,          # 1 TAHUN PENUH
+        'retrain_frequency': '2x/hari',
+        'retrain_times': ['08:00', '20:00'],
+        'forecast_steps': 15,         # FORECAST 15 MENIT
+        'timeframe_minutes': 1,
+        'horizon_real': '15 menit',
+        'sequence_length': 60,        # 1 JAM HISTORY
+        'lstm_units': 64,             # 64 UNITS
+        'dropout': 0.2,
+        'max_epochs': 15,             # 15 EPOCHS
+        'patience': 5,
+        'batch_size': 512             # BATCH BESAR UNTUK CEPAT
     }
 }
 
@@ -87,7 +92,7 @@ except Exception as e:
 
 # ==================== FUNGSI LSTM ====================
 def create_sequences(data, sequence_length):
-    """Membuat sequences untuk LSTM"""
+    """Membuat sequences untuk LSTM - SEMUA SEQUENCES"""
     X, y = [], []
     for i in range(len(data) - sequence_length):
         X.append(data[i:i+sequence_length])
@@ -95,12 +100,12 @@ def create_sequences(data, sequence_length):
     return np.array(X), np.array(y)
 
 def build_lstm_model(sequence_length, units=64, dropout=0.2):
-    """Membangun model LSTM"""
+    """Membangun model LSTM dengan 64 units"""
     model = Sequential([
         Input(shape=(sequence_length, 1)),
         LSTM(units, return_sequences=True),
         Dropout(dropout),
-        LSTM(units),
+        LSTM(units // 2),
         Dropout(dropout),
         Dense(1)
     ])
@@ -146,42 +151,57 @@ def delete_and_recreate_table(table_name, schema):
     
     return table_id
 
-def save_complete_dataset(timeframe_name, df_actual, forecasts, metrics, train_test_split_idx):
-    """Simpan SEMUA data: training, testing, forecast dengan REPLACEMENT"""
+def save_data_all(timeframe_name, df_actual, forecasts, metrics, train_test_split_idx):
+    """Simpan SEMUA DATA tanpa sampling"""
     current_time = datetime.now(pytz.timezone('Asia/Jakarta'))
     current_time_utc = current_time.astimezone(pytz.UTC)
     
-    # Siapkan data untuk semua records
     records = []
     
-    # Training data
-    for i in range(train_test_split_idx):
-        timestamp = df_actual['datetime'].iloc[i]
-        if pd.isna(timestamp):
-            timestamp_utc = current_time_utc
-        elif timestamp.tz is None:
-            timestamp_utc = timestamp.tz_localize('UTC')
-        else:
-            timestamp_utc = timestamp.astimezone(pytz.UTC)
-        
-        records.append({
-            'timestamp': timestamp_utc,
-            'price': float(df_actual['close'].iloc[i]),
-            'data_type': 'TRAIN',
-            'model_type': 'LSTM',
-            'timeframe': timeframe_name,
-            'training_date': current_time_utc.date(),
-            'created_at': current_time_utc,
-            'mape': float(metrics['mape']),
-            'accuracy': float(metrics['accuracy']),
-            'mse': float(metrics['mse']),
-            'rmse': float(metrics['rmse']),
-            'mae': float(metrics['mae'])
-        })
+    print(f"  Menyimpan SEMUA DATA ke BigQuery...")
     
-    # Testing data
-    for i in range(train_test_split_idx, len(df_actual)):
-        timestamp = df_actual['datetime'].iloc[i]
+    # ========== 1. TRAINING DATA (SEMUA) ==========
+    print(f"    1. Menyimpan training data ({train_test_split_idx:,} records)...")
+    
+    # Untuk menghindari memory error, kita bagi menjadi batch
+    batch_size = 50000
+    num_batches = (train_test_split_idx + batch_size - 1) // batch_size
+    
+    for batch_num in range(num_batches):
+        start_idx = batch_num * batch_size
+        end_idx = min((batch_num + 1) * batch_size, train_test_split_idx)
+        
+        print(f"      Batch {batch_num+1}/{num_batches}: {start_idx:,}-{end_idx:,}")
+        
+        for idx in range(start_idx, end_idx):
+            timestamp = df_actual['datetime'].iloc[idx]
+            if pd.isna(timestamp):
+                timestamp_utc = current_time_utc
+            elif timestamp.tz is None:
+                timestamp_utc = timestamp.tz_localize('UTC')
+            else:
+                timestamp_utc = timestamp.astimezone(pytz.UTC)
+            
+            records.append({
+                'timestamp': timestamp_utc,
+                'price': float(df_actual['close'].iloc[idx]),
+                'data_type': 'TRAIN',
+                'model_type': 'LSTM',
+                'timeframe': timeframe_name,
+                'training_date': current_time_utc.date(),
+                'created_at': current_time_utc,
+                'mape': float(metrics['mape']),
+                'accuracy': float(metrics['accuracy']),
+                'mse': float(metrics['mse']),
+                'rmse': float(metrics['rmse']),
+                'mae': float(metrics['mae'])
+            })
+    
+    # ========== 2. TESTING DATA (SEMUA) ==========
+    print(f"    2. Menyimpan testing data ({len(df_actual) - train_test_split_idx:,} records)...")
+    
+    for idx in range(train_test_split_idx, len(df_actual)):
+        timestamp = df_actual['datetime'].iloc[idx]
         if pd.isna(timestamp):
             timestamp_utc = current_time_utc
         elif timestamp.tz is None:
@@ -191,7 +211,7 @@ def save_complete_dataset(timeframe_name, df_actual, forecasts, metrics, train_t
         
         records.append({
             'timestamp': timestamp_utc,
-            'price': float(df_actual['close'].iloc[i]),
+            'price': float(df_actual['close'].iloc[idx]),
             'data_type': 'TEST',
             'model_type': 'LSTM',
             'timeframe': timeframe_name,
@@ -204,10 +224,12 @@ def save_complete_dataset(timeframe_name, df_actual, forecasts, metrics, train_t
             'mae': float(metrics['mae'])
         })
     
-    # Forecast data
+    # ========== 3. FORECAST DATA ==========
+    print("    3. Menyimpan forecast data...")
     config = TIMEFRAME_CONFIG[timeframe_name]
+    
     for i, forecast_price in enumerate(forecasts, 1):
-        forecast_date = current_time + timedelta(days=i)  # 1 hari ke depan
+        forecast_date = current_time + timedelta(minutes=i)
         forecast_date_utc = forecast_date.astimezone(pytz.UTC)
         
         records.append({
@@ -225,9 +247,11 @@ def save_complete_dataset(timeframe_name, df_actual, forecasts, metrics, train_t
             'mae': float(metrics['mae'])
         })
     
+    # ========== 4. CONVERT TO DATAFRAME ==========
     df_all = pd.DataFrame(records)
+    print(f"    ✓ Data prepared: {len(df_all):,} records")
     
-    # Definisikan schema
+    # ========== 5. DEFINE SCHEMA ==========
     schema = [
         bigquery.SchemaField("timestamp", "TIMESTAMP", mode="REQUIRED"),
         bigquery.SchemaField("price", "FLOAT64", mode="REQUIRED"),
@@ -243,29 +267,28 @@ def save_complete_dataset(timeframe_name, df_actual, forecasts, metrics, train_t
         bigquery.SchemaField("mae", "FLOAT64", mode="NULLABLE")
     ]
     
-    # Hapus dan buat ulang tabel
+    # ========== 6. SAVE TO BIGQUERY ==========
     table_name = f"lstm_{timeframe_name}"
     table_id = delete_and_recreate_table(table_name, schema)
     
-    # Load data ke tabel
     job_config = bigquery.LoadJobConfig(
         schema=schema,
         write_disposition=bigquery.WriteDisposition.WRITE_APPEND
     )
     
     try:
+        print(f"    Mengupload {len(df_all):,} records ke BigQuery...")
         job = client.load_table_from_dataframe(df_all, table_id, job_config=job_config)
         job.result()
         
-        # Verifikasi data masuk
         count_query = f"SELECT COUNT(*) as cnt FROM `{table_id}`"
         count_result = client.query(count_query).to_dataframe()
         
         print(f"  ✓ Data berhasil disimpan ke {table_name}")
-        print(f"     Total rows: {count_result['cnt'].iloc[0]}")
-        print(f"     Training: {train_test_split_idx} rows")
-        print(f"     Testing: {len(df_actual) - train_test_split_idx} rows")
-        print(f"     Forecast: {len(forecasts)} rows")
+        print(f"     Total rows: {count_result['cnt'].iloc[0]:,}")
+        print(f"     Training data: {train_test_split_idx:,} rows")
+        print(f"     Testing data: {len(df_actual) - train_test_split_idx:,} rows")
+        print(f"     Forecast data: {len(forecasts):,} rows")
         
         return True
         
@@ -274,33 +297,36 @@ def save_complete_dataset(timeframe_name, df_actual, forecasts, metrics, train_t
         return False
 
 # ==================== PROSES UTAMA ====================
-def process_1hari(force_retrain=True):
-    """Proses prediksi untuk timeframe 1 hari"""
-    print("="*70)
-    print("LSTM PREDICTION - SOL 1 HARI")
-    print("="*70)
+def process_1menit_all_data(force_retrain=True):
+    """Proses prediksi untuk timeframe 1 menit dengan SEMUA DATA TANPA STRIDE"""
+    print("="*80)
+    print("LSTM PREDICTION - SOL 1 MENIT")
+    print("FULL DATA - NO STRIDE - 15 EPOCHS - 64 UNITS")
+    print("="*80)
     
-    timeframe_name = '1hari'
+    timeframe_name = '1menit'
     config = TIMEFRAME_CONFIG[timeframe_name]
     
-    # 1. LOAD DATA DARI BIGQUERY (4 tahun terakhir)
-    print(f"\n1. Memuat data dari {config['table_name']}...")
+    # 1. LOAD DATA 1 TAHUN PENUH - TANPA LIMIT
+    print(f"\n1. Memuat data 1 TAHUN PENUH dari {config['table_name']}...")
     
     table_ref = f"{PROJECT_ID}.{DATASET_ID}.{config['table_name']}"
     
     try:
-        # Hitung tanggal 4 tahun terakhir
+        # Hitung tanggal 1 tahun terakhir
         lookback_date = (datetime.now() - timedelta(days=config['lookback_years']*365)).strftime('%Y-%m-%d')
         
+        # QUERY TANPA LIMIT - AMBIL SEMUA DATA 1 TAHUN
         query = f"""
             SELECT datetime, close
             FROM `{table_ref}`
             WHERE datetime >= '{lookback_date}'
             ORDER BY datetime
+            -- TANPA LIMIT: AMBIL SEMUA DATA 1 TAHUN
         """
         
         df = client.query(query).to_dataframe()
-        print(f"   ✓ Data loaded: {len(df)} rows (sejak {lookback_date})")
+        print(f"   ✓ Data loaded: {len(df):,} rows (sejak {lookback_date})")
         
         if len(df) == 0:
             print("   ✗ Data kosong")
@@ -320,12 +346,15 @@ def process_1hari(force_retrain=True):
     df = df.sort_values('datetime').reset_index(drop=True)
     df = df.drop_duplicates(subset=['datetime'])
     
+    # Handle missing values
+    df['close'] = df['close'].ffill().bfill()  # Forward fill lalu backward fill
+    
     print(f"   Data range: {df['datetime'].min()} to {df['datetime'].max()}")
-    print(f"   Data points: {len(df)}")
+    print(f"   Data points: {len(df):,}")
     print(f"   Last close price: {df['close'].iloc[-1]:.4f}")
     
-    if len(df) < config['sequence_length'] * 2:
-        print(f"   ✗ Data tidak cukup")
+    if len(df) < config['sequence_length'] * 3:
+        print(f"   ✗ Data tidak cukup untuk training")
         return None
     
     # 3. NORMALISASI
@@ -336,49 +365,61 @@ def process_1hari(force_retrain=True):
     close_scaled = scaler.fit_transform(close_prices)
     print(f"   ✓ Data dinormalisasi")
     
-    # 4. PREPARE SEQUENCES
-    print(f"\n4. Membuat sequences...")
+    # 4. PREPARE SEQUENCES - SEMUA SEQUENCES TANPA STRIDE!
+    print(f"\n4. Membuat sequences (SEMUA TANPA STRIDE)...")
+    
+    # Buat SEMUA sequences
     X, y = create_sequences(close_scaled, config['sequence_length'])
     
     train_size = int(len(X) * 0.8)
     X_train, X_test = X[:train_size], X[train_size:]
     y_train, y_test = y[:train_size], y[train_size:]
     
-    train_test_split_idx = train_size + config['sequence_length']
+    train_test_split_idx = int(len(df) * 0.8)
     
-    print(f"   ✓ Sequences created")
-    print(f"     Train samples: {len(X_train)}")
-    print(f"     Test samples: {len(X_test)}")
+    print(f"   ✓ Sequences created (100% tanpa stride)")
+    print(f"     Total data points: {len(df):,}")
+    print(f"     Sequence length: {config['sequence_length']} (60 menit/1 jam)")
+    print(f"     Total sequences: {len(X):,} (100% dari semua kemungkinan sequences)")
+    print(f"     Train sequences: {len(X_train):,}")
+    print(f"     Test sequences: {len(X_test):,}")
     
-    # 5. TRAIN MODEL
-    print(f"\n5. Training model LSTM...")
-    model_path = f"/tmp/lstm_model_{timeframe_name}.h5"
+    # 5. TRAIN MODEL - 15 EPOCHS
+    print(f"\n5. Training model LSTM (64 units, 15 epochs)...")
+    model_path = f"/tmp/lstm_model_{timeframe_name}_all_data.h5"
     
     if force_retrain or not os.path.exists(model_path):
-        print(f"   Training model baru...")
+        print(f"   Training model baru dengan SEMUA DATA...")
         
-        model = build_lstm_model(config['sequence_length'], units=64)
+        model = build_lstm_model(config['sequence_length'], units=config['lstm_units'])
         
         early_stopping = EarlyStopping(
             monitor='val_loss',
-            patience=10,
+            patience=config['patience'],
             restore_best_weights=True,
-            verbose=0
+            verbose=1
         )
         
         model_checkpoint = ModelCheckpoint(
             model_path,
             monitor='val_loss',
             save_best_only=True,
-            verbose=0
+            verbose=1
         )
+        
+        print(f"   Training configuration:")
+        print(f"     • Epochs: {config['max_epochs']}")
+        print(f"     • Batch size: {config['batch_size']}")
+        print(f"     • LSTM units: {config['lstm_units']}")
+        print(f"     • Training samples: {len(X_train):,}")
+        print(f"     • Validation samples: {len(X_test):,}")
         
         history = model.fit(
             X_train, y_train,
             validation_data=(X_test, y_test),
-            epochs=50,
-            batch_size=32,
-            verbose=0,
+            epochs=config['max_epochs'],
+            batch_size=config['batch_size'],
+            verbose=1,
             callbacks=[early_stopping, model_checkpoint]
         )
         
@@ -393,7 +434,8 @@ def process_1hari(force_retrain=True):
     # 6. EVALUASI MODEL
     print(f"\n6. Evaluasi model...")
     
-    y_pred_scaled = model.predict(X_test, verbose=0)
+    # Predict dengan batch besar
+    y_pred_scaled = model.predict(X_test, batch_size=2048, verbose=0)
     y_pred = scaler.inverse_transform(y_pred_scaled)
     y_test_actual = scaler.inverse_transform(y_test.reshape(-1, 1))
     
@@ -403,30 +445,35 @@ def process_1hari(force_retrain=True):
     mape = mean_absolute_percentage_error(y_test_actual, y_pred) * 100
     accuracy = max(0, 100 - mape)
     
-    print(f"   MSE:  {mse:.4f}")
-    print(f"   RMSE: {rmse:.4f}")
-    print(f"   MAE:  {mae:.4f}")
-    print(f"   MAPE: {mape:.2f}%")
+    print(f"   MSE:  {mse:.6f}")
+    print(f"   RMSE: {rmse:.6f}")
+    print(f"   MAE:  {mae:.6f}")
+    print(f"   MAPE: {mape:.4f}%")
     print(f"   Akurasi: {accuracy:.2f}%")
     
-    # 7. FORECASTING
-    print(f"\n7. Forecasting {config['forecast_steps']} step...")
+    # 7. FORECASTING (15 MENIT)
+    print(f"\n7. Forecasting {config['forecast_steps']} steps (15 menit)...")
     
     last_sequence = close_scaled[-config['sequence_length']:]
     forecasts = forecast_lstm(model, last_sequence, config['forecast_steps'], scaler)
     
-    print(f"   ✓ Forecast generated:")
-    for i, forecast in enumerate(forecasts, 1):
-        print(f"     Step {i}: {forecast:.4f}")
+    print(f"   ✓ Forecast generated untuk 15 menit ke depan:")
     
     last_actual = df['close'].iloc[-1]
+    for i in range(len(forecasts)):
+        forecast_price = forecasts[i]
+        if last_actual > 0:
+            pct_change = ((forecast_price - last_actual) / last_actual) * 100
+            minutes = i + 1
+            print(f"     {minutes} menit: {forecast_price:.4f} ({pct_change:+.2f}%)")
+    
     first_forecast = forecasts[0]
     if last_actual > 0:
         pct_change = ((first_forecast - last_actual) / last_actual) * 100
         print(f"   Perubahan: {last_actual:.4f} → {first_forecast:.4f} ({pct_change:+.2f}%)")
     
-    # 8. SAVE TO BIGQUERY
-    print(f"\n8. Menyimpan data ke BigQuery...")
+    # 8. SAVE ALL DATA TO BIGQUERY
+    print(f"\n8. Menyimpan SEMUA DATA ke BigQuery...")
     
     metrics_dict = {
         'mse': mse,
@@ -436,7 +483,7 @@ def process_1hari(force_retrain=True):
         'accuracy': accuracy
     }
     
-    success = save_complete_dataset(
+    success = save_data_all(
         timeframe_name=timeframe_name,
         df_actual=df,
         forecasts=forecasts,
@@ -448,22 +495,27 @@ def process_1hari(force_retrain=True):
         return None
     
     # 9. FINAL SUMMARY
-    print(f"\n" + "="*70)
-    print("SUMMARY - 1 HARI")
-    print("="*70)
+    print(f"\n" + "="*80)
+    print("SUMMARY - 1 MENIT (FULL DATA VERSION)")
+    print("="*80)
     
     summary_data = {
+        'Data Period': f"1 tahun penuh (sejak {lookback_date})",
+        'Total Data Points': f"{len(df):,}",
+        'Sequence Length': f"{config['sequence_length']} (60 menit/1 jam)",
+        'Forecast Horizon': f"{config['forecast_steps']} steps (15 menit)",
+        'Model Units': f"{config['lstm_units']} LSTM units",
+        'Training Epochs': f"{config['max_epochs']}",
         'Last Actual Price': f"{last_actual:.4f}",
-        'Forecast Price': f"{first_forecast:.4f}",
-        'Change %': f"{pct_change:+.2f}%" if last_actual > 0 else "N/A",
-        'MAPE': f"{mape:.2f}%",
+        'Next Minute Forecast': f"{first_forecast:.4f}",
+        '15-Minute Forecast': f"{forecasts[-1]:.4f}",
+        'Change % (1min)': f"{pct_change:+.2f}%" if last_actual > 0 else "N/A",
+        'MAPE': f"{mape:.4f}%",
         'Accuracy': f"{accuracy:.2f}%",
-        'Training Samples': f"{len(X_train)}",
-        'Testing Samples': f"{len(X_test)}",
-        'Total Data Points': f"{len(df)}",
-        'Forecast Steps': f"{config['forecast_steps']}",
-        'Model Status': "Retrained" if (force_retrain or not os.path.exists(model_path)) else "Loaded",
-        'Lookback Period': f"{config['lookback_years']} tahun"
+        'Training Sequences': f"{len(X_train):,} (100% tanpa stride)",
+        'Testing Sequences': f"{len(X_test):,} (100% tanpa stride)",
+        'Data Storage': f"SEMUA DATA disimpan ({len(df):,} rows)",
+        'Processing Strategy': "FULL DATA - NO STRIDE - 15 EPOCHS"
     }
     
     summary_df = pd.DataFrame(list(summary_data.items()), columns=['Metric', 'Value'])
@@ -474,12 +526,25 @@ def process_1hari(force_retrain=True):
         'forecasts': forecasts,
         'metrics': metrics_dict,
         'last_price': df['close'].iloc[-1],
-        'first_forecast': forecasts[0] if len(forecasts) > 0 else None
+        'first_forecast': forecasts[0] if len(forecasts) > 0 else None,
+        'total_data_points': len(df),
+        'total_sequences': len(X),
+        'training_sequences': len(X_train),
+        'testing_sequences': len(X_test)
     }
 
 # ==================== JALANKAN ====================
 if __name__ == "__main__":
-    print("\nMEMULAI PREDIKSI LSTM UNTUK 1 HARI...")
+    print("\n" + "="*80)
+    print("MEMULAI PREDIKSI LSTM UNTUK 1 MENIT")
+    print("KONFIGURASI:")
+    print("  • Data: 1 tahun penuh (tanpa limit)")
+    print("  • Model: 64 LSTM units")
+    print("  • Forecast: 15 menit ke depan")
+    print("  • Sequence length: 60 (1 jam history)")
+    print("  • Training: SEMUA DATA tanpa stride")
+    print("  • Epochs: 15 epochs")
+    print("="*80 + "\n")
     
     # Pastikan dataset PREDIKSI ada
     dataset_id = f"{PROJECT_ID}.{PREDICTION_DATASET}"
@@ -494,17 +559,23 @@ if __name__ == "__main__":
         print(f"✓ Dataset {PREDICTION_DATASET} dibuat")
     
     # Jalankan proses
-    result = process_1hari(force_retrain=True)
+    result = process_1menit_all_data(force_retrain=True)
     
     if result:
-        print("\n" + "="*70)
-        print("PREDIKSI 1 HARI SELESAI")
-        print("="*70)
-        print(f"✓ Data telah disimpan ke BigQuery")
-        print(f"✓ Tabel: {PROJECT_ID}.{PREDICTION_DATASET}.lstm_1hari")
-        print(f"✓ Forecast untuk besok: {result['first_forecast']:.4f}")
-        print(f"✓ Accuracy: {result['metrics']['accuracy']:.2f}%")
+        print("\n" + "="*80)
+        print("PREDIKSI 1 MENIT SELESAI")
+        print("="*80)
+        print(f"✓ SEMUA DATA 1 TAHUN telah diproses")
+        print(f"✓ Tabel BigQuery: {PROJECT_ID}.{PREDICTION_DATASET}.lstm_1menit")
+        print(f"✓ Total data points: {result['total_data_points']:,}")
+        print(f"✓ Total sequences: {result['total_sequences']:,} (100% tanpa stride)")
+        print(f"✓ Training sequences: {result['training_sequences']:,}")
+        print(f"✓ Testing sequences: {result['testing_sequences']:,}")
+        print(f"✓ Forecast 1 menit: {result['first_forecast']:.4f}")
+        print(f"✓ Forecast 15 menit: {result['forecasts'][-1]:.4f}")
+        print(f"✓ Model accuracy: {result['metrics']['accuracy']:.2f}%")
+        print(f"✓ Data storage: SEMUA data disimpan ke BigQuery")
     else:
-        print("\n" + "="*70)
-        print("PREDIKSI 1 HARI GAGAL")
-        print("="*70)
+        print("\n" + "="*80)
+        print("PREDIKSI 1 MENIT GAGAL")
+        print("="*80)
