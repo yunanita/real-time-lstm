@@ -62,17 +62,17 @@ PROJECT_ID = "time-series-analysis-480002"
 DATASET_ID = "SOL"
 PREDICTION_DATASET = "PREDIKSI"
 
-# Konfigurasi 1 bulan
+# Konfigurasi 1 hari
 TIMEFRAME_CONFIG = {
-    '1bulan': {
-        'table_name': 'SOL_1bulan',
-        'lookback_years': None,
-        'retrain_frequency': '1x/bulan',
-        'retrain_times': ['end_of_month'],
+    '1hari': {
+        'table_name': 'SOL_1hari',
+        'lookback_years': 4,
+        'retrain_frequency': '1x/hari',
+        'retrain_times': ['20:00'],
         'forecast_steps': 1,
-        'timeframe_minutes': 43200,
-        'horizon_real': '1 bulan',
-        'sequence_length': 12
+        'timeframe_minutes': 1440,
+        'horizon_real': '1 hari',
+        'sequence_length': 20
     }
 }
 
