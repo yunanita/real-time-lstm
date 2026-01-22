@@ -23,29 +23,29 @@ jobs:
           python -m pip install --upgrade pip
           pip install pandas numpy pytz scikit-learn tensorflow google-cloud-bigquery
 
-      - name: Create Google Cloud Credentials File
+      - name: Create GCP Credentials File
         run: |
+          # Buat file credential dari secret
           echo '${{ secrets.GCP_CREDS }}' > gcp-credentials.json
-          echo "Credential file created. Size: $(wc -c < gcp-credentials.json) bytes"
 
-      - name: Verify Credentials
-        run: |
-          python -c "
-          import json
-          with open('gcp-credentials.json', 'r') as f:
-              data = json.load(f)
-          print(f'Project ID: {data.get(\"project_id\")}')
-          print(f'Client Email: {data.get(\"client_email\")}')
-          print('✓ Credentials are valid JSON')
-          "
+          # Debug: cek file
+          echo "=== Debug: Credential file ==="
+          ls -la gcp-credentials.json
+          echo "File size: $(wc -c < gcp-credentials.json) bytes"
+
+          # Test validitas JSON
+          python -c "import json; json.load(open('gcp-credentials.json')); print('✓ JSON is valid')"
 
       - name: Run LSTM 1 Bulan
         env:
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-credentials.json
+          GOOGLE_APPLICATION_CREDENTIALS: gcp-credentials.json
         run: |
+          echo "=== Running LSTM Script ==="
+          echo "Using credential file: $GOOGLE_APPLICATION_CREDENTIALS"
           python lstm_1bulan.py
 
       - name: Cleanup
+        if: always()
         run: |
           rm -f gcp-credentials.json
           echo "✓ Cleanup completed"

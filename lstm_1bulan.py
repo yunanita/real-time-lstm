@@ -70,10 +70,6 @@ TIMEFRAME_CONFIG = {
     }
 }
 
-# ==================== INISIALISASI BIGQUERY ====================
-creds = service_account.Credentials.from_service_account_file(credential_path)
-client = bigquery.Client(credentials=creds, project=creds.project_id)
-
 # ==================== FUNGSI LSTM ====================
 def create_sequences(data, sequence_length):
     """Membuat sequences untuk LSTM"""
