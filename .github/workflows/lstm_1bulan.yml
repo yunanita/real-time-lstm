@@ -21,16 +21,31 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt || true
+          pip install pandas numpy pytz scikit-learn tensorflow google-cloud-bigquery
 
-      - name: Setup Google Credentials
-        env:
-          GCP_CREDS: ${{ secrets.GCP_CREDS }}
+      - name: Create Google Cloud Credentials File
         run: |
-          echo "$GCP_CREDS" > time-series-analysis-480002-e7649b18ed82.json
+          echo '${{ secrets.GCP_CREDS }}' > gcp-credentials.json
+          echo "Credential file created. Size: $(wc -c < gcp-credentials.json) bytes"
+
+      - name: Verify Credentials
+        run: |
+          python -c "
+          import json
+          with open('gcp-credentials.json', 'r') as f:
+              data = json.load(f)
+          print(f'Project ID: {data.get(\"project_id\")}')
+          print(f'Client Email: {data.get(\"client_email\")}')
+          print('✓ Credentials are valid JSON')
+          "
 
       - name: Run LSTM 1 Bulan
         env:
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/time-series-analysis-480002-e7649b18ed82.json
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-credentials.json
         run: |
           python lstm_1bulan.py
+
+      - name: Cleanup
+        run: |
+          rm -f gcp-credentials.json
+          echo "✓ Cleanup completed"

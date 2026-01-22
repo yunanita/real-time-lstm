@@ -17,13 +17,44 @@ import tensorflow as tf
 import os
 import warnings
 warnings.filterwarnings('ignore')
+from pathlib import Path
 
-# ==================== KONFIGURASI ====================
-credential_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "time-series-analysis-480002-e7649b18ed82.json")
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credential_path
+# Cari file credential yang tersedia
+def find_credential_file():
+    possible_paths = [
+        os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"),
+        "gcp-credentials.json",
+        "credentials.json",
+        "time-series-analysis-480002-e7649b18ed82.json"
+    ]
+    
+    for path in possible_paths:
+        if path and Path(path).exists():
+            print(f"✓ Menggunakan credential file: {path}")
+            return path
+    
+    print("✗ Tidak ditemukan file credential")
+    return None
+
+credential_path = find_credential_file()
+
+if not credential_path:
+    print("ERROR: File credential tidak ditemukan!")
+    print("Pastikan GCP_CREDS secret sudah diatur di GitHub")
+    exit(1)
+
 PROJECT_ID = "time-series-analysis-480002"
 DATASET_ID = "SOL"
 PREDICTION_DATASET = "PREDIKSI"
+
+# ==================== INISIALISASI BIGQUERY ====================
+try:
+    creds = service_account.Credentials.from_service_account_file(credential_path)
+    client = bigquery.Client(credentials=creds, project=creds.project_id)
+    print(f"✓ Berhasil terhubung ke BigQuery. Project: {creds.project_id}")
+except Exception as e:
+    print(f"✗ Gagal menginisialisasi BigQuery client: {e}")
+    exit(1)
 
 # Konfigurasi 1 bulan
 TIMEFRAME_CONFIG = {
