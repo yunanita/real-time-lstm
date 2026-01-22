@@ -1,11 +1,14 @@
-# ==================== LSTM PREDICTION - 1 BULAN ====================
+# ==================== LSTM PREDICTION - 1 BULAN (CLEAN VERSION) ====================
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import pytz
+import json
+import os
 
 from google.oauth2 import service_account
 from google.cloud import bigquery
+import google.auth
 
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error, mean_absolute_error, mean_absolute_percentage_error
@@ -14,47 +17,14 @@ from tensorflow.keras.models import Sequential, load_model
 from tensorflow.keras.layers import LSTM, Dense, Dropout, Input
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 import tensorflow as tf
-import os
+
 import warnings
 warnings.filterwarnings('ignore')
-from pathlib import Path
 
-# Cari file credential yang tersedia
-def find_credential_file():
-    possible_paths = [
-        os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"),
-        "gcp-credentials.json",
-        "credentials.json",
-        "time-series-analysis-480002-e7649b18ed82.json"
-    ]
-    
-    for path in possible_paths:
-        if path and Path(path).exists():
-            print(f"✓ Menggunakan credential file: {path}")
-            return path
-    
-    print("✗ Tidak ditemukan file credential")
-    return None
-
-credential_path = find_credential_file()
-
-if not credential_path:
-    print("ERROR: File credential tidak ditemukan!")
-    print("Pastikan GCP_CREDS secret sudah diatur di GitHub")
-    exit(1)
-
+# ==================== KONFIGURASI ====================
 PROJECT_ID = "time-series-analysis-480002"
 DATASET_ID = "SOL"
 PREDICTION_DATASET = "PREDIKSI"
-
-# ==================== INISIALISASI BIGQUERY ====================
-try:
-    creds = service_account.Credentials.from_service_account_file(credential_path)
-    client = bigquery.Client(credentials=creds, project=creds.project_id)
-    print(f"✓ Berhasil terhubung ke BigQuery. Project: {creds.project_id}")
-except Exception as e:
-    print(f"✗ Gagal menginisialisasi BigQuery client: {e}")
-    exit(1)
 
 # Konfigurasi 1 bulan
 TIMEFRAME_CONFIG = {
@@ -62,13 +32,49 @@ TIMEFRAME_CONFIG = {
         'table_name': 'SOL_1bulan',
         'lookback_years': None,
         'retrain_frequency': '1x/bulan',
-        'retrain_times': ['start_of_month'],
+        'retrain_times': ['end_of_month'],
         'forecast_steps': 1,
         'timeframe_minutes': 43200,
         'horizon_real': '1 bulan',
         'sequence_length': 12
     }
 }
+
+# ==================== INISIALISASI BIGQUERY ====================
+def initialize_bigquery_client():
+    """Initialize BigQuery client from environment variable or file"""
+    
+    # Coba baca dari environment variable GCP_CREDS (untuk GitHub Actions/Secrets)
+    if os.environ.get('GCP_CREDS'):
+        try:
+            service_account_info = json.loads(os.environ['GCP_CREDS'])
+            creds = service_account.Credentials.from_service_account_info(service_account_info)
+            print("✓ Menggunakan credentials dari environment variable GCP_CREDS")
+            return bigquery.Client(credentials=creds, project=PROJECT_ID)
+        except Exception as e:
+            print(f"✗ Error membaca credentials dari environment variable: {e}")
+    
+    # Fallback 1: Coba baca dari file local
+    SERVICE_ACCOUNT_PATH = "/content/time-series-analysis-480002-e7649b18ed82.json"
+    if os.path.exists(SERVICE_ACCOUNT_PATH):
+        try:
+            creds = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_PATH)
+            print(f"✓ Menggunakan credentials dari file: {SERVICE_ACCOUNT_PATH}")
+            return bigquery.Client(credentials=creds, project=PROJECT_ID)
+        except Exception as e:
+            print(f"✗ Error membaca credentials dari file: {e}")
+    
+    # Fallback 2: Coba menggunakan default credentials
+    try:
+        creds, _ = google.auth.default()
+        print("✓ Menggunakan default application credentials")
+        return bigquery.Client(credentials=creds, project=PROJECT_ID)
+    except Exception as e:
+        print(f"✗ Error menggunakan default credentials: {e}")
+        raise
+
+# Inisialisasi client
+client = initialize_bigquery_client()
 
 # ==================== FUNGSI LSTM ====================
 def create_sequences(data, sequence_length):
