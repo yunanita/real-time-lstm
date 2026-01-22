@@ -20,19 +20,11 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install --upgrade pip
-          pip install pandas numpy scikit-learn tensorflow google-cloud-bigquery
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-      - name: Setup GCP Credentials
+      - name: Run LSTM 1 Bulan
         env:
           GCP_CREDS: ${{ secrets.GCP_CREDS }}
         run: |
-          # Langsung set sebagai environment variable (cara termudah)
-          echo "GCP_CREDS='$GCP_CREDS'" >> $GITHUB_ENV
-          echo "✓ Credentials set as environment variable"
-
-      - name: Run LSTM
-        env:
-          GCP_CREDS_JSON: ${{ secrets.GCP_CREDS }}
-        run: |
-          python lstm_fixed.py
+          python lstm_1bulan.py
