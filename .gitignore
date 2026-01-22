@@ -1,0 +1,22 @@
+# Ignore Python cache and environment files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.venv
+
+# Ignore Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Ignore VSCode settings
+.vscode/
+
+# Ignore Google Cloud credentials and other secrets
+*.json
+!README.md
+!requirements.txt
+
+# Ignore OS files
+.DS_Store
+Thumbs.db

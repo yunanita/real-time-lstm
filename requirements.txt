@@ -1,0 +1,6 @@
+# Tambahkan package yang kamu butuhkan di bawah ini
+# Contoh:
+tensorflow
+pandas
+numpy
+# Tambahkan package lain sesuai kebutuhan script lstm_1bulan.py
