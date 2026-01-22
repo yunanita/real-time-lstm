@@ -19,7 +19,8 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # ==================== KONFIGURASI ====================
-SERVICE_ACCOUNT_PATH = "time-series-analysis-480002-e7649b18ed82.json"
+credential_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "time-series-analysis-480002-e7649b18ed82.json")
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credential_path
 PROJECT_ID = "time-series-analysis-480002"
 DATASET_ID = "SOL"
 PREDICTION_DATASET = "PREDIKSI"
@@ -39,7 +40,7 @@ TIMEFRAME_CONFIG = {
 }
 
 # ==================== INISIALISASI BIGQUERY ====================
-creds = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_PATH)
+creds = service_account.Credentials.from_service_account_file(credential_path)
 client = bigquery.Client(credentials=creds, project=creds.project_id)
 
 # ==================== FUNGSI LSTM ====================
